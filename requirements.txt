@@ -41,6 +41,7 @@ pyOpenGL>=3.1.0
 pyOpenGL_accelerate>=3.1.0
 
 meshcat==0.3.2
+vispy>=0.14.0
 webdataset==0.2.86
 omegaconf==2.3.0
 pypng==0.20220715.0
@@ -51,7 +52,7 @@ roma==1.4.4
 seaborn==0.13.2
 pin==2.7.0
 openpyxl==3.1.2
-torchnet==0.0.4
+# torchnet==0.0.4
 wandb==0.16.5
 colorama==0.4.6
 GPUtil==1.4.0

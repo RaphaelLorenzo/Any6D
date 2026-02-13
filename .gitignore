@@ -28,8 +28,10 @@ sam2/_C.*
 sam2/outputs/*
 sam2/checkpoints/*.pt
 
-
-
+demo_data*
+demo_folder*
+ho3d
+results_folder*
 
 
 

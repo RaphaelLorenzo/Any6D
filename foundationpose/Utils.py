@@ -625,6 +625,8 @@ def find_best_ratio_combination(extent_pcd_clean, extent_mesh, obb_pcd_clean, ob
     # Reorder the PCD extent according to current permutation
     reordered_extent = extent_pcd_clean[list(perm)]
     ratio = reordered_extent / extent_mesh
+    
+    # print(reordered_extent, extent_mesh, ratio)
 
     # Apply the scaling
     scaled_extent = extent_mesh * ratio
@@ -641,6 +643,8 @@ def find_best_ratio_combination(extent_pcd_clean, extent_mesh, obb_pcd_clean, ob
       best_iou = iou
       best_ratio = ratio
       best_perm = perm
+      
+  # print(best_ratio, best_perm, best_iou)
 
   return best_ratio, best_perm, best_iou
 

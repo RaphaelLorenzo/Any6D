@@ -312,10 +312,12 @@ class Any6D:
             return best_pose.data.cpu().numpy()
 
 
-    def register_any6d(self, K, rgb, depth, ob_mask, ob_id=None, glctx=None, iteration=5, name=None, refinement=True, axis_align=True,coarse_est=True):
+    def register_any6d(self, K, rgb, depth, ob_mask, ob_id=None, glctx=None, iteration=5, name=None, refinement=True, axis_align=True, coarse_est=True, scaling_allow = "uniform"):
         '''Copmute pose from given pts to self.pcd
         @pts: (N,3) np array, downsampled scene points
+        scaling_allow: "uniform", "all", "none"
         '''
+        assert scaling_allow in ["uniform", "all", "none"]
         set_seed(0)
 
         if self.glctx is None:
@@ -362,7 +364,9 @@ class Any6D:
             extent_mesh = obb_mesh.extent
 
             ratio, best_perm, best_iou = find_best_ratio_combination(extent_pcd_clean, extent_mesh, obb_pcd_clean, obb_mesh)
-            mesh_pcd.scale(ratio[1], center=obb_mesh.center) # y axis (height)
+            if scaling_allow == "all":
+                print("ratio init (use only y axis)", ratio)
+                mesh_pcd.scale(ratio[1], center=obb_mesh.center) # y axis (height)
 
             obb_mesh = mesh_pcd.get_oriented_bounding_box(robust=True)
             obb_mesh.color = (1, 0, 0)
@@ -408,15 +412,15 @@ class Any6D:
                                           glctx=self.glctx, mesh_diameter=self.diameter, iteration=iteration,
                                           get_vis=self.debug >= 2)
 
-        if vis is not None:
-            imageio.imwrite(f'{self.refiner_dir}/vis_refiner_stage_1_consider_pose_{name}.png', vis)
+        # if vis is not None:
+        #     imageio.imwrite(f'{self.refiner_dir}/vis_refiner_stage_1_consider_pose_{name}.png', vis)
 
         scores, vis = self.scorer.predict(mesh=self.mesh, rgb=rgb, depth=depth, K=K,
                                           ob_in_cams=poses.data.cpu().numpy(), normal_map=normal_map,
                                           mesh_tensors=self.mesh_tensors, glctx=self.glctx, mesh_diameter=self.diameter,
                                           get_vis=self.debug >= 2)
-        if vis is not None:
-            imageio.imwrite(f'{self.scorer_dir}/vis_score_stage_1_consider_pose_{name}.png', vis)
+        # if vis is not None:
+        #     imageio.imwrite(f'{self.scorer_dir}/vis_score_stage_1_consider_pose_{name}.png', vis)
 
         ids = torch.as_tensor(scores).argsort(descending=True)
         # logging.info(f'sort ids:{ids}')
@@ -455,7 +459,9 @@ class Any6D:
             extent_mesh = obb_mesh.extent
             ratio = extent_pcd_clean / extent_mesh
             mesh_pcd.translate(obb_pcd_clean.center - obb_mesh.center)
-            mesh_pcd.vertices = o3d.utility.Vector3dVector(np.array(mesh_pcd.vertices) * ratio[None])
+            if scaling_allow == "all":
+                print("ratio mid", ratio)
+                mesh_pcd.vertices = o3d.utility.Vector3dVector(np.array(mesh_pcd.vertices) * ratio[None])
             mesh_pcd.translate(obb_mesh.center - obb_pcd_clean.center)
 
             obb_mesh = mesh_pcd.get_oriented_bounding_box(robust=True)
@@ -477,15 +483,15 @@ class Any6D:
                                               glctx=self.glctx, mesh_diameter=self.diameter, iteration=iteration,
                                               get_vis=self.debug >= 2)
 
-            if vis is not None:
-                imageio.imwrite(f'{self.refiner_dir}/vis_refiner_stage_2_consider_pose_{name}.png', vis)
+            # if vis is not None:
+            #     imageio.imwrite(f'{self.refiner_dir}/vis_refiner_stage_2_consider_pose_{name}.png', vis)
 
             scores, vis = self.scorer.predict(mesh=self.mesh, rgb=rgb, depth=depth, K=K,
                                               ob_in_cams=poses.data.cpu().numpy(), normal_map=normal_map,
                                               mesh_tensors=self.mesh_tensors, glctx=self.glctx, mesh_diameter=self.diameter,
                                               get_vis=self.debug >= 2)
-            if vis is not None:
-                imageio.imwrite(f'{self.scorer_dir}/vis_score_stage_2_consider_pose_{name}.png', vis)
+            # if vis is not None:
+            #     imageio.imwrite(f'{self.scorer_dir}/vis_score_stage_2_consider_pose_{name}.png', vis)
 
             ids = torch.as_tensor(scores).argsort(descending=True)
             # logging.info(f'sort ids:{ids}')
@@ -497,7 +503,9 @@ class Any6D:
 
         if refinement:
             best_pose = poses[0].data.cpu().numpy()
-            if True:
+            if scaling_allow != "none":
+                # either uniform or non-uniform scaling
+                
                 # 252 samples
                 # Define the number of samples
                 num_samples = 252
@@ -506,13 +514,17 @@ class Any6D:
                 ratio_i, ratio_l = 0.6, 1.4
                 ratios = {'x': (ratio_i, ratio_l), 'y': (ratio_i, ratio_l), 'z': (ratio_i, ratio_l)}
 
-                # Generate random scaling values for each axis
-                samples = {axis: np.random.uniform(*ratio, num_samples) for axis, ratio in ratios.items()}
-                # This creates a dictionary with keys 'x', 'y', 'z', each containing an array of 252 random values
+                if scaling_allow == "uniform":
+                    samples = np.random.uniform(ratio_i, ratio_l, num_samples)
+                    scaling_matrices = np.array([np.diag([samples[i], samples[i], samples[i], 1]) for i in range(num_samples)])
+                elif scaling_allow == "all":
+                    # Generate random scaling values for each axis
+                    samples = {axis: np.random.uniform(*ratio, num_samples) for axis, ratio in ratios.items()}
+                    # This creates a dictionary with keys 'x', 'y', 'z', each containing an array of 252 random values
 
-                # Create scaling matrices
-                scaling_matrices = np.array([np.diag([samples['x'][i], samples['y'][i], samples['z'][i], 1]) for i in range(num_samples)])
-                # This creates 252 4x4 diagonal matrices, each representing a scaling transformation
+                    # Create scaling matrices
+                    scaling_matrices = np.array([np.diag([samples['x'][i], samples['y'][i], samples['z'][i], 1]) for i in range(num_samples)])
+                    # This creates 252 4x4 diagonal matrices, each representing a scaling transformation
 
                 # Generate final transformation matrices
                 final_transforms = np.einsum('ij,njk->nik', best_pose, scaling_matrices)
@@ -526,8 +538,8 @@ class Any6D:
                                                           glctx=self.glctx, mesh_diameter=self.diameter,
                                                           iteration=iteration,
                                                           get_vis=self.debug >= 2)
-                if vis is not None:
-                    imageio.imwrite(f'{self.refiner_dir}/vis_refiner_stage_3_consider_size.png', vis)
+                # if vis is not None:
+                #     imageio.imwrite(f'{self.refiner_dir}/vis_refiner_stage_3_consider_size.png', vis)
 
                 rescale_scores, vis = self.scorer.predict(mesh=self.mesh, rgb=rgb, depth=depth, K=K,
                                                           ob_in_cams=rescale_poses.data.cpu().numpy(),
@@ -535,8 +547,8 @@ class Any6D:
                                                           mesh_tensors=self.mesh_tensors, glctx=self.glctx,
                                                           mesh_diameter=self.diameter,
                                                           get_vis=self.debug >= 2)
-                if vis is not None:
-                    imageio.imwrite(f'{self.scorer_dir}/vis_score_stage_3_consider_size.png', vis)
+                # if vis is not None:
+                #     imageio.imwrite(f'{self.scorer_dir}/vis_score_stage_3_consider_size.png', vis)
                 print('')
 
                 # combine_scores = scores + rescale_scores
@@ -561,16 +573,16 @@ class Any6D:
                                               xyz_map=xyz_map,
                                               glctx=self.glctx, mesh_diameter=self.diameter, iteration=iteration,
                                               get_vis=self.debug >= 2)
-            if vis is not None:
-                imageio.imwrite(f'{self.refiner_dir}/vis_refiner_stage_4_rerun_pose.png', vis)
+            # if vis is not None:
+            #     imageio.imwrite(f'{self.refiner_dir}/vis_refiner_stage_4_rerun_pose.png', vis)
 
             scores, vis = self.scorer.predict(mesh=self.mesh, rgb=rgb, depth=depth, K=K,
                                               ob_in_cams=poses.data.cpu().numpy(), normal_map=normal_map,
                                               mesh_tensors=self.mesh_tensors, glctx=self.glctx,
                                               mesh_diameter=self.diameter,
                                               get_vis=self.debug >= 2)
-            if vis is not None:
-                imageio.imwrite(f'{self.scorer_dir}/vis_score_stage_4_rerun_pose.png', vis)
+            # if vis is not None:
+            #     imageio.imwrite(f'{self.scorer_dir}/vis_score_stage_4_rerun_pose.png', vis)
 
             ids = torch.as_tensor(scores).argsort(descending=True)
             # logging.info(f'sort ids:{ids}')
